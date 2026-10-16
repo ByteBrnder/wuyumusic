@@ -2,7 +2,7 @@
 
 ## 系统流体云的正确含义
 
-用户所指为应用退到后台后显示在系统顶部的播放胶囊，点击展开封面、进度和播放控制卡片。目标设备为 OPPO Find X8 / ColorOS 16.0.7。现已接入 Android 标准 MediaSession 与关联的系统媒体通知，等待在该手机上验证顶部胶囊与展开卡片。没有拿到 OPPO 对自定义应用包名展示的保证；不能将资源编译通过等同于系统胶囊已显示。原先误做的云雾动画与自动融合代码已删除。
+用户所指为应用退到后台后显示在系统顶部的播放胶囊，点击展开封面、进度和播放控制卡片。现已接入 Android 标准 MediaSession 与关联的系统媒体通知，顶部胶囊与展开卡片仍待真机验证。厂商未保证所有自定义应用均能获得胶囊展示；不能将资源编译通过等同于系统胶囊已显示。原先误做的云雾动画与自动融合代码已删除。
 
 ## 音乐胶囊代码与打包
 
@@ -14,7 +14,7 @@
 - `npm run build:app` 生成 UTS 对应 Kotlin / Swift 及 App 资源。新增服务声明后需用 HBuilderX **重新制作自定义基座或重新打包 APK**，仅热更新 JS / WGT 不能添加服务；旧标准基座可能降级为普通通知。
 - H5 继续使用浏览器 MediaSession；网页内不模拟顶部系统胶囊。
 
-### Find X8 联调顺序
+### 安卓设备联调顺序
 
 1. 安装带该原生模块及合并 manifest 的新基座 / APK；使用实际应用包名，不能以其他播放器包名冒充。
 2. 播放带封面的本地歌曲，进入“音乐库管理 → 后台播放与系统控制 → 刷新播放状态”，应显示“系统媒体会话已启动”。
@@ -30,7 +30,7 @@
 
 ## 系统锁屏：当前边界
 
-已新增原生 `WuyuParticleWallpaperService`，与网页 / 应用内展示独立。APK 注册该服务并经用户在系统预览确认应用后，Android 可以在系统锁屏背景绘制粒子。没有增加自绘时钟、解锁界面或覆盖系统窗口。ColorOS 是否允许只应用到锁屏，仍需在 Find X8 的系统预览中确认。
+已新增原生 `WuyuParticleWallpaperService`，与网页 / 应用内展示独立。APK 注册该服务并经用户在系统预览确认应用后，Android 可以在系统锁屏背景绘制粒子。没有增加自绘时钟、解锁界面或覆盖系统窗口。是否允许仅应用到锁屏，需在设备的系统预览中确认。
 系统媒体控件由 `system-controls.js` 优先调用本地 UTS 模块 `src/uni_modules/wuyu-media-session`。原生服务发布 framework MediaSession、MediaMetadata、PlaybackState，以及绑定 session token 的 MediaStyle 通知；播放与音频焦点仍由原有 BackgroundAudioManager 管理，模块不播放第二路音频。原生模块不可用时降级到旧通知，并在“后台播放与系统控制”显示原因。
 
 ## 系统粒子动态壁纸（已实现）
@@ -57,7 +57,7 @@
 4. 返回桌面并锁屏，点亮屏幕后观察粒子背景。完全息屏时不绘制，不接管 AOD。
 5. 在系统壁纸设置选择其他壁纸即可停用。原应用内“进入锁屏展示”仍是独立入口。
 
-尚未连接 Find X8，APK 安装、ColorOS 锁屏应用范围、手势投递和实际帧率 / 耗电尚未验证；不能把编译结果当作真机通过。
+尚未连接安卓设备，APK 安装、系统锁屏应用范围、手势投递和实际帧率 / 耗电尚未验证；不能把编译结果当作真机通过。
 
 ## 待真机检查
 
@@ -83,7 +83,7 @@
 - H5 资源构建通过。
 - App 资源构建与 UTS → Kotlin / Swift 代码生成通过；不等于 APK 完整打包通过。
 - 使用 Kotlin 2.1.20 与本机 Android API 34 的 android.jar，原生 Kotlin 文件联合编译通过，仅有兼容旧 Android API 的弃用警告。
-- 已找到 D:/andriodSDK/platform-tools/adb.exe，adb devices 没有设备，尚未执行 Find X8 真机胶囊检查。
+- 已找到 D:/andriodSDK/platform-tools/adb.exe，adb devices 没有设备，尚未执行系统播放胶囊真机检查。
 
 - 本次新增壁纸资源经 Android AAPT2 compile / link 检查通过，App 产物包含服务清单、Kotlin 源码与 res 资源。检查生成的临时 APK 只含资源，不是可安装的完整应用。
 
