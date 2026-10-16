@@ -116,3 +116,9 @@ design/                   # 图标设计资源
 - [原生媒体模块说明](src/uni_modules/wuyu-media-session/README.md)
 - [系统播放控件与粒子壁纸接入说明](LOCKSCREEN_INTEGRATION.md)
 - [Android 播放检查清单](ANDROID_PLAYBACK_CHECKLIST.md)
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 开源许可证。
+
+Copyright © 2026 ByteBrnder。第三方依赖遵循各自的许可证。

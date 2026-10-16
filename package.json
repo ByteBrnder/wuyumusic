@@ -1,6 +1,7 @@
 {
   "name": "wuyu-music",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "scripts": {
     "test": "node --test tests/library-core.test.mjs tests/lyrics-api.test.mjs tests/lyrics-proxy.test.mjs tests/music-workflows.test.mjs",
     "dev:app": "uni -p app",
