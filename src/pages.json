@@ -1,0 +1,17 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"disableScroll": true
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "雾屿",
+		"navigationBarBackgroundColor": "#f4f7f5",
+		"backgroundColor": "#f4f7f5"
+	}
+}

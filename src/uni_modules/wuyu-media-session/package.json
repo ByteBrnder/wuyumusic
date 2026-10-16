@@ -1,0 +1,9 @@
+{
+  "id": "wuyu-media-session",
+  "displayName": "雾屿系统媒体会话",
+  "version": "1.0.0",
+  "description": "Android MediaSession 与系统音乐卡片，复用现有音频播放",
+  "engines": { "HBuilderX": "^4.25.0" },
+  "dcloudext": { "type": "uts" },
+  "uni_modules": { "dependencies": [], "encrypt": [] }
+}

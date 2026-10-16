@@ -1,0 +1,12 @@
+export function onMediaAction(callback: (action: string, seconds: number) => void): void {}
+export function publishMedia(metadata: string, playing: boolean, position: number, duration: number): boolean { return false }
+export function updateMediaPosition(position: number, duration: number): void {}
+export function getMediaStatus(): string { return '{"available":false}' }
+export function releaseMedia(): void {}
+export function openParticleWallpaper(): string { return '系统粒子动态壁纸仅支持 Android' }
+export function setWallpaperEnvelope(json: string): boolean { return false }
+export function setWallpaperIntensity(intensity: number): void {}
+
+export function getDeviceStatus(): string { return '{"available":false}' }
+export function openDeviceSettings(kind: string): string { return '仅支持 Android' }
+export function setWallpaperText(json: string): void {}

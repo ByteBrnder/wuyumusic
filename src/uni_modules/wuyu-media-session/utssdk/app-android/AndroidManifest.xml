@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-feature android:name="android.software.live_wallpaper" android:required="false" />
+    <application>
+        <service android:name="com.wuyu.media.WuyuMediaService"
+            android:exported="false" android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false" />
+        <service android:name="com.wuyu.media.WuyuParticleWallpaperService"
+            android:label="雾屿音乐 · 锁屏粒子"
+            android:permission="android.permission.BIND_WALLPAPER" android:exported="true">
+            <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/wuyu_particle_wallpaper" />
+        </service>
+    </application>
+</manifest>

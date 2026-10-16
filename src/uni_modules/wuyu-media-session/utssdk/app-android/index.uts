@@ -1,0 +1,45 @@
+import WuyuDeviceState from 'com.wuyu.media.WuyuDeviceState'
+import WuyuMediaBridge from 'com.wuyu.media.WuyuMediaBridge'
+import WuyuWallpaperState from 'com.wuyu.media.WuyuWallpaperState'
+
+// The on-prefix keeps this callback alive across repeated native media actions.
+export function onMediaAction(callback: (action: string, seconds: number) => void): void {
+  WuyuMediaBridge.listen((action: string, seconds: Double) => { callback(action, seconds) })
+}
+export function publishMedia(metadata: string, playing: boolean, position: number, duration: number): boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return WuyuMediaBridge.publish(context, metadata, playing, position.toDouble(), duration.toDouble())
+}
+export function updateMediaPosition(position: number, duration: number): void {
+  WuyuMediaBridge.position(position.toDouble(), duration.toDouble())
+}
+export function getMediaStatus(): string { return WuyuMediaBridge.status() }
+export function releaseMedia(): void { WuyuMediaBridge.release() }
+export function openParticleWallpaper(): string {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return '请返回应用前台后设置壁纸'
+  return WuyuWallpaperState.openPreview(activity)
+}
+export function setWallpaperEnvelope(json: string): boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return WuyuWallpaperState.envelope(context, json)
+}
+export function setWallpaperIntensity(intensity: number): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) WuyuWallpaperState.options(context, intensity.toDouble())
+}
+
+export function getDeviceStatus(): string {
+  const context = UTSAndroid.getAppContext()
+  return context == null ? '{"available":false}' : WuyuDeviceState.status(context)
+}
+export function openDeviceSettings(kind: string): string {
+  const activity = UTSAndroid.getUniActivity()
+  return activity == null ? '请返回应用前台' : WuyuDeviceState.open(activity, kind)
+}
+export function setWallpaperText(json: string): void {
+  const context = UTSAndroid.getAppContext()
+  if (context != null) WuyuWallpaperState.textOptions(context, json)
+}
