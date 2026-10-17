@@ -417,7 +417,7 @@ export function useMusic() {
   }
   async function drainMetadata() {
     if (metadataRunning || !metadataQueue.length) return
-    if (importBusy.value || backupBusy.value || relinkingId.value || repairingId.value || !appForeground.value) {
+    if (importBusy.value || backupBusy.value || relinkingId.value || repairingId.value || isPlaying.value || !appForeground.value) {
       clearTimeout(metadataTimer); metadataTimer = setTimeout(drainMetadata, 1000); return
     }
     metadataRunning = true
@@ -431,14 +431,14 @@ export function useMusic() {
       if (!metadata.coverData?.length && typeof source.readCover === 'function') {
         try { Object.assign(metadata, source.readCover() || {}) } catch {}
       }
-      if (backupBusy.value || relinkingId.value || repairingId.value) { metadataQueue.push(id); return }
+      if (backupBusy.value || relinkingId.value || repairingId.value || isPlaying.value) { metadataQueue.push(id); return }
       let live = tracks.value.find(track => track.id === id)
       if (!live || live.audioKey !== original.audioKey) return
       if (!live.cover && metadata.coverData?.length) createdCover = await putAsset(`${uid()}.cover`, metadata.coverData, metadata.coverMime)
       const cover = createdCover ? await assetUrl(createdCover) : ''
       live = tracks.value.find(track => track.id === id)
       if (!live || live.audioKey !== original.audioKey) return
-      if (backupBusy.value || relinkingId.value || repairingId.value) { metadataQueue.push(id); return }
+      if (backupBusy.value || relinkingId.value || repairingId.value || isPlaying.value) { metadataQueue.push(id); return }
       const values = { metadataPending: false, metadataError: '' }
       if (live.title === original.title && metadata.title) values.title = metadata.title
       if (live.artist === original.artist && metadata.artist) { values.artist = metadata.artist; values.filenameGuess = false }
@@ -462,13 +462,14 @@ export function useMusic() {
   async function importBatch(files, native = false) {
     if (!files.length || importBusy.value || libraryLocked()) return
     importBusy.value = true; failures.value = []; let added = 0, duplicates = 0
-    const importedIds = []
     failedImports = []; importPercent.value = 0; importCancelled.value = false
     importElapsed.value = 0; importFileElapsed.value = 0
     batchStartedAt = fileStartedAt = importClock()
     clearInterval(importClockTimer)
     importClockTimer = setInterval(updateImportClock, 250)
     try {
+      if (metadataRunning) importStatus.value = '正在等待上一次信息读取完成…'
+      while (metadataRunning && !importCancelled.value) { updateImportClock(); await new Promise(resolve => setTimeout(resolve, 16)) }
       for (let i = 0; i < files.length; i++) {
         if (importCancelled.value) {
           for (const file of files.slice(i)) { failedImports.push({ file, native }); failures.value.push({ name: file.name, message: '已取消，可重新导入' }) }
@@ -477,26 +478,71 @@ export function useMusic() {
         const file = files[i], id = uid(); let audioKey = '', coverKey = '', committed = false
         updateImportClock(); fileStartedAt = importClock(); importFileElapsed.value = 0; importFilePercent.value = 0
         importStatus.value = `正在导入 ${i + 1}/${files.length} · ${file.name}`
+        const advance = async (percent, stage) => {
+          checkImportCancelled()
+          importFilePercent.value = Math.max(importFilePercent.value, percent)
+          importPercent.value = Math.max(importPercent.value, Math.floor((i + importFilePercent.value / 100) / files.length * 100))
+          importStatus.value = `正在${stage} ${i + 1}/${files.length} · ${file.name}`
+          updateImportClock()
+          await new Promise(resolve => setTimeout(resolve, 0))
+          checkImportCancelled()
+        }
         try {
           let source = file, hash
           if (!native && file.size === 0) throw new Error('文件为空，无法导入')
           importStatus.value = `正在${native ? '复制并去重' : '检查重复'} ${i + 1}/${files.length} · ${file.name}`
           await new Promise(resolve => setTimeout(resolve, 0))
           if (native) {
-            const copied = await copyDocument(file, { fingerprint: true, cancelled: () => importCancelled.value, onProgress: (bytes, total) => { updateImportClock(); if (total > 0) { importFilePercent.value = Math.max(importFilePercent.value, Math.floor(Math.min(1, bytes / total) * 75)); importPercent.value = Math.max(importPercent.value, Math.floor((i + importFilePercent.value / 100) / files.length * 100)) } } })
+            const copied = await copyDocument(file, { fingerprint: true, cancelled: () => importCancelled.value, onProgress: (bytes, total) => { updateImportClock(); if (total > 0) { importFilePercent.value = Math.max(importFilePercent.value, Math.floor(Math.min(1, bytes / total) * 55)); importPercent.value = Math.max(importPercent.value, Math.floor((i + importFilePercent.value / 100) / files.length * 100)) } } })
             audioKey = copied.path; hash = copied.hash; source = nativeMetadataSource(audioKey)
             if (source.size === 0) throw new Error('文件为空，无法导入')
           } else hash = await fingerprint(file)
           checkImportCancelled()
           if (tracks.value.some(track => track.hash === hash && !track.missing)) { duplicates++; continue }
-          importFilePercent.value = 80; updateImportClock()
-          importStatus.value = `正在保存 ${i + 1}/${files.length} · ${file.name}`
+          await advance(60, '读取内嵌封面与歌词')
+          let metadata = {}, metadataError = ''
+          try {
+            metadata = await readEmbeddedAudioMetadata(source, { strict: true })
+          } catch (error) { metadataError = errorText(error) }
+          checkImportCancelled()
+          if (native && !metadata.coverData?.length) {
+            await advance(80, '读取系统封面')
+            try { Object.assign(metadata, source.readCover() || {}) }
+            catch (error) { metadataError = metadataError || errorText(error) }
+          }
+          await advance(90, '保存歌曲、封面与歌词')
           if (!native) audioKey = await putAsset(`${id}.audio`, file)
+          checkImportCancelled()
+          if (metadata.coverData?.length) coverKey = await putAsset(`${id}.cover`, metadata.coverData, metadata.coverMime)
           const guess = filenameInfo(file.name)
-          const track = await hydrate({ id, audioKey, coverKey: '', hash, size: file.size || source.size || 0, name: file.name, title: guess.title, artist: guess.artist, filenameGuess: !!guess.artist, album: '', lyrics: [], duration: 0, metadataPending: true })
+          const track = await hydrate({ id, audioKey, coverKey, hash, size: file.size || source.size || 0, name: file.name,
+            title: metadata.title || guess.title, artist: metadata.artist || guess.artist, filenameGuess: !metadata.artist && !!guess.artist,
+            album: metadata.album || '', lyrics: metadata.lyrics || [], duration: 0, metadataPending: false, metadataError })
+          let lookupAttempt = null
+          if (autoLyrics.value && !hasTimedLyrics(track.lyrics) && track.artist?.trim() && !track.filenameGuess) {
+            await advance(95, '联网匹配同步歌词')
+            try {
+              const seconds = await readAudioDuration(track.uri)
+              checkImportCancelled()
+              if (!seconds) throw new Error('未能读取音频时长，可播放后手动查找歌词')
+              track.duration = seconds
+              const results = await requestLyrics({ title: track.title, artist: track.artist, album: track.album, duration: seconds })
+              checkImportCancelled()
+              const match = results.find(item => item.confident)
+              if (match && autoLyrics.value) Object.assign(track, { lyrics: match.lyrics, lyricsRevision: uid(), lyricOffset: 0,
+                lyricsSource: { provider: match.provider || LYRICS_PROVIDER, id: match.id, title: match.title, artist: match.artist, album: match.album, duration: match.duration }, lyricLookup: '已自动获取同步歌词' })
+              else { lookupAttempt = { count: 1, state: 'unmatched' }; track.lyricLookup = '未找到确定匹配的同步歌词，可手动选择版本' }
+            } catch (error) {
+              checkImportCancelled()
+              track.lyricLookup = errorText(error)
+              lookupAttempt = { count: 1, state: 'failed', retryAt: Math.max(Date.now() + 60000, lyricsRetryAt()) }
+            }
+          }
+          await advance(98, '完成导入')
           const next = [...tracks.value, track]
           checkImportCancelled()
-          persist(next); tracks.value = next; queue.value.push(id); committed = true; added++; importedIds.push(id)
+          persist(next); tracks.value = next; queue.value.push(id); committed = true; added++
+          if (lookupAttempt) autoLyricAttempts.set(id, { ...lookupAttempt, key: JSON.stringify([track.title, track.artist, track.lyricsRevision]) })
         } catch (error) { failures.value.push({ name: file.name, message: errorText(error) }); failedImports.push({ file, native }) }
         finally {
           if (!committed) { try { await deleteAsset(audioKey); await deleteAsset(coverKey) } catch {} }
@@ -511,7 +557,6 @@ export function useMusic() {
       updateImportClock(); clearInterval(importClockTimer); importClockTimer = null; importBusy.value = false
     }
     importStatus.value = ''; activeTab.value = 'library'; saveSession()
-    for (const id of importedIds) enqueueMetadata(id)
     toast(`${importCancelled.value ? '导入已取消，' : ''}已导入 ${added} 首${duplicates ? `，跳过 ${duplicates} 首重复歌曲` : ''}${failures.value.length ? `，${failures.value.length} 首待重试` : ''}，用时 ${importElapsed.value} 秒`)
     if (failures.value.length) sheet.value = 'failures'
   }
@@ -627,7 +672,7 @@ export function useMusic() {
   }
   async function fetchAutomaticLyrics(id, knownDuration = 0) {
     const track = tracks.value.find(item => item.id === id)
-    if (!autoLyrics.value || backupBusy.value || !track || track.metadataPending || hasTimedLyrics(track.lyrics) || !track.artist?.trim() || track.filenameGuess || track.audioKey?.startsWith('/static/demo/') || autoLyricPending.has(id)) return
+    if (!autoLyrics.value || backupBusy.value || importBusy.value || !track || track.metadataPending || hasTimedLyrics(track.lyrics) || !track.artist?.trim() || track.filenameGuess || track.audioKey?.startsWith('/static/demo/') || autoLyricPending.has(id)) return
     const key = JSON.stringify([track.title, track.artist, track.lyricsRevision])
     const previous = autoLyricAttempts.get(id)
     if (!canRetryAutomatic(previous, key)) return

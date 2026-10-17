@@ -399,7 +399,7 @@ async function readSourceBytes(source, start, end) {
   return new Uint8Array(await slice.arrayBuffer());
 }
 
-export async function readEmbeddedAudioMetadata(source) {
+export async function readEmbeddedAudioMetadata(source, options = {}) {
   try {
     const size = getSourceSize(source);
     const header = await readSourceBytes(source, 0, Math.min(12, size));
@@ -419,6 +419,6 @@ export async function readEmbeddedAudioMetadata(source) {
       }
       return metadata;
     }
-  } catch (error) { console.warn('音频内嵌标签解析失败', error); }
+  } catch (error) { if (options.strict) throw error; console.warn('音频内嵌标签解析失败', error); }
   return {};
 }

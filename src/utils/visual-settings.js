@@ -1,4 +1,9 @@
 export const VISUAL_SETTINGS_KEY = 'wuyu-particle-options-v1'
+export const PARTICLE_QUALITY = {
+  power: { label: '省电', points: 1000, fps: 24, ratio: 1 },
+  balanced: { label: '均衡', points: 2000, fps: 30, ratio: 1.5 },
+  fine: { label: '精细', points: 4900, fps: 60, ratio: 3 },
+}
 
 export function normalizeTexts(value) {
   const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\r?\n/) : []
@@ -8,7 +13,8 @@ export function normalizeTexts(value) {
 export function normalizeVisualSettings(value = {}) {
   const saved = value && typeof value === 'object' ? value : {}
   return {
-    quality: ['power', 'balanced', 'fine'].includes(saved.quality) ? saved.quality : 'balanced',
+    quality: saved.qualityVersion === 2 && ['power', 'balanced', 'fine'].includes(saved.quality) ? saved.quality : 'fine',
+    qualityVersion: 2,
     motionIntensity: Number.isFinite(saved.motionIntensity) ? Math.max(0, Math.min(100, saved.motionIntensity)) : 80,
     interval: Number.isFinite(saved.interval) ? Math.max(6, Math.min(30, saved.interval)) : 12,
     autoChange: saved.autoChange !== false, favoriteOnly: saved.favoriteOnly === true, enabled: saved.enabled !== false,

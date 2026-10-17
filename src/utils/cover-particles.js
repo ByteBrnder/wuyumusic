@@ -1,4 +1,4 @@
-import { normalizeTexts, textRows } from './visual-settings.js'
+import { PARTICLE_QUALITY, normalizeTexts, textRows } from './visual-settings.js'
 import { landmarkPoint, LANDMARK_VIEWS } from './particle-landmarks.js'
 
 const envelopes = new Map()
@@ -6,7 +6,7 @@ const BUILDINGS = ['eiffel', 'pyramids', 'opera', 'tiantan', 'pearl', 'greatwall
 const SHAPES = ['sphere', 'torus', 'helix', 'wave', 'fuji', 'dunes', 'ocean', ...BUILDINGS]
 const TEXT_SHAPES = ['text:雾屿音乐']
 const textSamples = new Map()
-const QUALITY = { power: { points: 1100, fps: 24, ratio: 1 }, balanced: { points: 2200, fps: 30, ratio: 1.5 }, fine: { points: 3400, fps: 45, ratio: 2 } }
+const QUALITY = PARTICLE_QUALITY
 const FAVORITES_KEY = 'wuyu-particle-favorites-v1'
 function sampleText(text, font = 'sans', layout = 'stack') {
   const key = JSON.stringify([text, font, layout])
@@ -187,8 +187,7 @@ export class CoverParticles {
     this.sceneTime = 0
     this.nextShapeAt = 4
     this.shape = 'cover'
-    this.quality = QUALITY.balanced
-    this.detailScale = 1
+    this.quality = QUALITY.fine
     this.zoom = 1
     this.pointers = new Map()
     this.velocityX = this.velocityY = 0
@@ -227,7 +226,7 @@ export class CoverParticles {
     if (this.disposed) return
     const coverChanged = state.cover !== this.state.cover || state.coverKey !== this.state.coverKey
     const audioChanged = state.audio !== this.state.audio || state.audioKey !== this.state.audioKey
-    const qualityChanged = state.quality !== this.state.quality || state.powerSave !== this.state.powerSave || state.thermal !== this.state.thermal
+    const qualityChanged = state.quality !== this.state.quality
     const intervalChanged = state.interval !== this.state.interval
     const displayChanged = !!state.displayMode !== !!this.state.displayMode
     const textChanged = JSON.stringify([state.customTexts, state.textFont, state.textLayout]) !== JSON.stringify([this.state.customTexts, this.state.textFont, this.state.textLayout])
@@ -240,7 +239,7 @@ export class CoverParticles {
       if (state.displayMode) { this.previousShape = this.shape; this.setShape('cover'); this.nextShapeAt = this.sceneTime + 24; this.cameraReset = true }
       else if (this.previousShape) this.setShape(this.previousShape)
     }
-    if (qualityChanged) { this.quality = state.powerSave || state.thermal >= 2 ? QUALITY.power : QUALITY[state.quality] || QUALITY.balanced; this.detailScale = 1; this.resize() }
+    if (qualityChanged) { this.quality = QUALITY[state.quality] || QUALITY.fine; this.resize() }
     if (intervalChanged) this.nextShapeAt = this.sceneTime + (Number(state.interval) || 12)
     this.clockTime = state.time || 0
     this.clockAt = performance.now()
@@ -446,7 +445,18 @@ export class CoverParticles {
     this.schedule()
   }
   applyCoverSamples(data) {
-    const count = 58
+    const count = 70
+    const sourceSide = Math.sqrt(data.length / 4)
+    if (sourceSide !== count) {
+      const legacy = document.createElement('canvas'); legacy.width = legacy.height = sourceSide
+      const legacyContext = legacy.getContext('2d')
+      const pixels = legacyContext.createImageData(sourceSide, sourceSide); pixels.data.set(data); legacyContext.putImageData(pixels, 0, 0)
+      const expanded = document.createElement('canvas'); expanded.width = expanded.height = count
+      const expandedContext = expanded.getContext('2d', { willReadFrequently: true })
+      expandedContext.imageSmoothingEnabled = true; expandedContext.imageSmoothingQuality = 'high'
+      expandedContext.drawImage(legacy, 0, 0, count, count)
+      data = expandedContext.getImageData(0, 0, count, count).data
+    }
     this.points = []
     for (let y = 0; y < count; y++) for (let x = 0; x < count; x++) {
       const index = (y * count + x) * 4
@@ -454,7 +464,7 @@ export class CoverParticles {
       const luminance = data[index] * .2126 + data[index + 1] * .7152 + data[index + 2] * .0722
       const shade = 1 - Math.max(0, (luminance - 120) / 135) * .38
       const contrastColor = `rgb(${Math.round(data[index] * shade)},${Math.round(data[index + 1] * shade)},${Math.round(data[index + 2] * shade)})`
-      this.points.push({ contrastColor, x: (x + .5) / count, y: (y + .5) / count, color: `rgb(${data[index]},${data[index + 1]},${data[index + 2]})`, textColor: `rgb(${Math.round(data[index] * .62)},${Math.round(data[index + 1] * .68)},${Math.round(data[index + 2] * .63)})`, seed: Math.sin(x * 12.9898 + y * 78.233) * 2 })
+      this.points.push({ contrastColor, x: (x + .5) / count, y: (y + .5) / count, color: `rgb(${data[index]},${data[index + 1]},${data[index + 2]})`, highlightColor: `rgb(${Math.round(data[index] * .65 + 255 * .35)},${Math.round(data[index + 1] * .65 + 255 * .35)},${Math.round(data[index + 2] * .65 + 255 * .35)})`, textColor: `rgb(${Math.round(data[index] * .62)},${Math.round(data[index + 1] * .68)},${Math.round(data[index + 2] * .63)})`, seed: Math.sin(x * 12.9898 + y * 78.233) * 2 })
     }
     this.sceneTime = 0; this.rotationX = 0; this.rotationY = 0
     this.setShape('cover', true)
@@ -468,7 +478,7 @@ export class CoverParticles {
     this.points = []
     if (!url) return
     const cached = cachedAnalysis('covers', key)
-    if (Array.isArray(cached) && cached.length === 58 * 58 * 4 && cached.every(value => Number.isInteger(value) && value >= 0 && value <= 255)) {
+    if (Array.isArray(cached) && [58 * 58 * 4, 70 * 70 * 4, 80 * 80 * 4].includes(cached.length) && cached.every(value => Number.isInteger(value) && value >= 0 && value <= 255)) {
       this.resize(); this.applyCoverSamples(cached); return
     }
     const image = new Image()
@@ -477,10 +487,11 @@ export class CoverParticles {
       try {
         this.resize()
         const sample = document.createElement('canvas')
-        const count = 58
+        const count = 70
         sample.width = sample.height = count
         const context = sample.getContext('2d', { willReadFrequently: true })
         const side = Math.min(image.naturalWidth, image.naturalHeight)
+        context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high'
         context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, count, count)
         const data = context.getImageData(0, 0, count, count).data
         this.applyCoverSamples(data)
@@ -579,7 +590,7 @@ export class CoverParticles {
       values: compact(this.envelope.values), low: compact(this.envelope.low) } })
   }
   isMoving() {
-    return (this.state.playing && !this.reduced && !(this.state.thermal >= 3)) || this.pointer || (!this.reduced && Math.abs(this.velocityX) + Math.abs(this.velocityY) > .01) || ((!this.state.playing || this.state.thermal >= 3) && this.breathGain > .005 && !this.reduced) || this.morph < 1 || this.cameraReset
+    return (this.state.playing && !this.reduced) || this.pointer || (!this.reduced && Math.abs(this.velocityX) + Math.abs(this.velocityY) > .01) || (!this.state.playing && this.breathGain > .005 && !this.reduced) || this.morph < 1 || this.cameraReset
   }
   schedule() {
     if (this.disposed) return
@@ -592,15 +603,13 @@ export class CoverParticles {
     }
     if (this.frame) return
     this.draw()
-    this.lastFrame = 0
+    this.lastFrame = 0; this.nextFrameAt = 0
     const tick = now => {
       if (this.disposed) return
       if (!this.isMoving()) { this.frame = null; return }
       this.frame = requestAnimationFrame(tick)
-      if (now - this.lastFrame < 1000 / this.quality.fps) return
-      const frameGap = this.lastFrame ? now - this.lastFrame : 0
-      this.lateFrames = frameGap > 1000 / this.quality.fps * 1.8 ? (this.lateFrames || 0) + 1 : Math.max(0, (this.lateFrames || 0) - 1)
-      if (this.lateFrames > 20) { this.detailScale = Math.max(.35, this.detailScale * .8); this.lateFrames = 0; this.lastRecoveryAt = now }
+      if (this.nextFrameAt && now + .75 < this.nextFrameAt) return
+      this.nextFrameAt = Math.max((this.nextFrameAt || now) + 1000 / this.quality.fps, now)
       const delta = this.lastFrame ? Math.min((now - this.lastFrame) / 1000, .08) : 1 / 30
       this.lastFrame = now
       if (!this.pointer && !this.cameraReset && !this.reduced) {
@@ -621,10 +630,10 @@ export class CoverParticles {
       this.bassBaseline += (this.lowEnergy - this.bassBaseline) * (1 - Math.exp(-delta * 1.4))
       const kick = Math.min(1, Math.max(0, this.lowEnergy - this.bassBaseline) * 3)
       this.beatPulse += (kick - this.beatPulse) * (1 - Math.exp(-delta * (kick > this.beatPulse ? 25 : 3.5)))
-      const breathing = this.state.playing && !this.reduced && !(this.state.thermal >= 3) ? 1 : 0
+      const breathing = this.state.playing && !this.reduced ? 1 : 0
       this.breathGain += (breathing - this.breathGain) * (1 - Math.exp(-delta * (breathing ? 4 : 6)))
       if (breathing) this.breathPhase += delta * Math.PI * 2 / 4.8
-      if (this.state.playing && !this.reduced && !(this.state.thermal >= 3)) {
+      if (this.state.playing && !this.reduced) {
         this.phase += delta * (.25 + this.energy * 1.5)
         this.sceneTime += delta
         if (this.state.displayMode && !this.pointer && this.sceneTime > this.nextShapeAt) {
@@ -683,7 +692,7 @@ export class CoverParticles {
     const pitch = this.rotationX + (view ? view[1] : this.shape === 'torus' || this.shape === 'wave' ? .42 : this.shape === 'opera' ? .12 : ['fuji', 'dunes', 'ocean'].includes(this.shape) ? .25 : 0)
     const cy = Math.cos(yaw), sy = Math.sin(yaw), cx = Math.cos(pitch), sx = Math.sin(pitch)
     const projected = []
-    const budget = Math.max(600, Math.floor(this.quality.points * this.detailScale))
+    const budget = this.quality.points
     const count = Math.min(this.points.length, budget)
     for (let index = 0; index < count; index++) {
       const point = this.points[Math.floor(index * this.points.length / count)]
@@ -699,19 +708,22 @@ export class CoverParticles {
     projected.sort((a, b) => b.depth - a.depth)
     for (const { point, x, y, depth, perspective } of projected) {
       const shimmer = this.reduced ? 0 : response * this.highEnergy * .06 * Math.sin(this.phase * 4 + point.seed * 7)
-      const radius = Math.max(.55, size / (isBuilding ? 168 : 110) * perspective * ((point.edge ? .88 : .7) + response * (this.lowEnergy * .12 + breath * .13 + this.beatPulse * .1) + shimmer))
-      context.globalAlpha = point.ambient ? .25 : Math.max(isBuilding ? .42 : .48, Math.min(.98, (point.edge ? .98 : .8) - depth * .22 + shimmer))
+      const radius = Math.max(.55, size / (isBuilding ? 200 : isText ? 160 : 150) * perspective * ((point.edge ? .88 : .7) + response * (this.lowEnergy * .12 + breath * .13 + this.beatPulse * .1) + shimmer))
+      const opacity = point.ambient ? .2 : Math.max(isBuilding ? .48 : .45, Math.min(.98, (point.edge ? .98 : .84) - depth * .2 + shimmer))
+      context.globalAlpha = opacity
       context.fillStyle = isText ? point.textColor : this.shape === 'cover' ? point.color : point.contrastColor
       context.beginPath()
       context.arc(x, y, radius, 0, Math.PI * 2)
       context.fill()
+      if (this.quality === QUALITY.fine && !point.ambient && depth < .25 && this.shape !== 'cover') {
+        context.globalAlpha = opacity * .38
+        context.fillStyle = point.highlightColor
+        context.beginPath(); context.arc(x - radius * .22, y - radius * .24, radius * .32, 0, Math.PI * 2); context.fill()
+      }
     }
     context.globalAlpha = 1
     const cost = performance.now() - started
-    this.slowFrames = cost > 1000 / this.quality.fps * .65 ? (this.slowFrames || 0) + 1 : Math.max(0, (this.slowFrames || 0) - 1)
-    if (this.slowFrames > 25 && this.detailScale > .35) { this.detailScale = Math.max(.35, this.detailScale * .8); this.slowFrames = 0; this.lastRecoveryAt = started }
-    if (cost < 1000 / this.quality.fps * .25 && !this.slowFrames && !this.lateFrames && this.detailScale < 1 && started - (this.lastRecoveryAt || 0) > 15000) { this.detailScale = Math.min(1, this.detailScale + .08); this.lastRecoveryAt = started }
-    if (!this.lastPerformanceAt || started - this.lastPerformanceAt > 3000) { this.lastPerformanceAt = started; this.report({ particleCount: projected.length, renderMs: Math.round(cost), adaptive: this.detailScale < 1 }) }
+    if (!this.lastPerformanceAt || started - this.lastPerformanceAt > 3000) { this.lastPerformanceAt = started; this.report({ particleCount: projected.length, renderMs: Math.round(cost) }) }
   }
   destroy() {
     this.disposed = true

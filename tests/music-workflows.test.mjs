@@ -17,7 +17,7 @@ async function until(predicate) {
 }
 async function setup(options = {}) {
   const assets = new Map(), storage = new Map(), toasts = [], events = {}, callbacks = {}, deleted = []
-  storage.set('wuyu-lyrics-settings-v1', { automatic: false })
+  storage.set('wuyu-lyrics-settings-v1', { automatic: options.automatic === true })
   const audio = { stop() { callbacks.onStop?.() }, play() { callbacks.onPlay?.() }, pause() { callbacks.onPause?.() }, seek() {} }
   for (const name of ['onPlay', 'onPause', 'onStop', 'onCanplay', 'onTimeUpdate', 'onEnded', 'onError']) audio[name] = fn => { callbacks[name] = fn }
   let selection = [], written = ''
@@ -33,7 +33,7 @@ async function setup(options = {}) {
     setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout,
     createSystemControls: () => ({ update() {}, position() {} }), readDeviceState: () => ({}), openSystemSettings() {},
     LYRICS_SETTINGS_KEY: 'wuyu-lyrics-settings-v1', LYRICS_PROVIDER: '', hasTimedLyrics: lines => lines.some(line => line.time !== null),
-    canRetryAutomatic: () => false, requestLyrics: async () => [], lyricsRetryAt: () => 0,
+    canRetryAutomatic: () => false, requestLyrics: options.lyrics || (async () => []), readAudioDuration: async () => 120, lyricsRetryAt: () => 0,
     pickWebFiles: async () => selection,
     fingerprint: options.fingerprint || (async file => file.hash), fingerprintAsset: async key => assets.get(key)?.hash || key,
     putAsset: async (key, data) => { const path = `idb:${key}`; assets.set(path, data); return path },
@@ -51,16 +51,21 @@ async function setup(options = {}) {
 }
 const song = (hash, name = `${hash}.mp3`) => ({ name, size: 100, hash })
 
-test('import commits playable audio before metadata resolves and skips duplicates', async () => {
+test('import commits audio, cover and lyrics together after metadata, with stage progress and deduplication', async () => {
   const gate = deferred(), ctx = await setup({ metadata: () => gate.promise })
   ctx.select([song('one'), song('one'), song('two')])
-  await ctx.music.importSong()
+  const importing = ctx.music.importSong()
+  await until(() => ctx.music.importStatus.value.includes('读取内嵌封面与歌词'))
+  assert.equal(ctx.music.tracks.value.length, 0)
+  assert.equal(ctx.music.importBusy.value, true)
+  assert.ok(ctx.music.importFilePercent.value > 0 && ctx.music.importFilePercent.value < 100)
+  gate.resolve({ title: '读取完成', coverData: new Uint8Array([1, 2, 3]), coverMime: 'image/png', lyrics: [{ time: 1, text: '同步歌词' }] })
+  await importing
   assert.equal(ctx.music.tracks.value.length, 2)
   assert.equal(ctx.music.importPercent.value, 100)
-  assert.ok(ctx.music.tracks.value.every(track => track.uri && track.metadataPending))
-  gate.resolve({ title: '读取完成', lyrics: [{ time: 1, text: '同步歌词' }] })
-  await until(() => ctx.music.tracks.value.every(track => !track.metadataPending))
+  assert.ok(ctx.music.tracks.value.every(track => track.uri && track.cover && !track.metadataPending && track.lyrics.length))
   assert.equal(ctx.music.tracks.value[0].title, '读取完成')
+  assert.equal(ctx.music.metadataStatus.value, '')
 })
 
 test('cancelling during hashing commits no file and leaves all songs retryable', async () => {
@@ -83,13 +88,17 @@ test('metadata failure preserves playable song and a retryable error', async () 
   assert.ok(ctx.assets.has(ctx.music.tracks.value[0].audioKey))
 })
 
-test('pending metadata cannot overwrite a manually edited title', async () => {
+test('cancellation during metadata parsing commits nothing and remains retryable', async () => {
   const gate = deferred(), ctx = await setup({ metadata: () => gate.promise })
-  ctx.select([song('one')]); await ctx.music.importSong()
-  ctx.music.editTrack(ctx.music.tracks.value[0]); ctx.music.editor.value.title = '我的标题'; ctx.music.saveEdit()
-  gate.resolve({ title: '文件标签', artist: '标签歌手' })
-  await until(() => !ctx.music.tracks.value[0].metadataPending)
-  assert.equal(ctx.music.tracks.value[0].title, '我的标题')
+  ctx.select([song('one')]); const importing = ctx.music.importSong()
+  await until(() => ctx.music.importStatus.value.includes('读取内嵌封面与歌词'))
+  ctx.music.cancelImport()
+  gate.resolve({ coverData: new Uint8Array([1]), lyrics: [{ time: 1, text: '歌词' }] })
+  await importing
+  assert.equal(ctx.music.tracks.value.length, 0)
+  assert.equal(ctx.assets.size, 0)
+  assert.equal(ctx.music.failures.value.length, 1)
+  assert.ok(ctx.music.importPercent.value < 100)
 })
 
 test('relink preserves song identity, playlists, favorite and lyrics', async () => {
@@ -153,4 +162,29 @@ test('failed library commit rolls back restore assets without changing existing 
   await target.music.onWebBackup({ target: { files: [{ text: async () => JSON.stringify(backup) }] } })
   assert.equal(target.music.tracks.value.length, 0)
   assert.equal(target.assets.size, 0)
+})
+
+
+test('online lyrics finish during import before committing the song', async () => {
+  const gate = deferred(), ctx = await setup({ automatic: true, metadata: async () => ({ artist: '歌手', title: '歌曲', lyrics: [] }), lyrics: () => gate.promise })
+  ctx.select([song('online')]); const importing = ctx.music.importSong()
+  await until(() => ctx.music.importStatus.value.includes('联网匹配同步歌词'))
+  assert.equal(ctx.music.tracks.value.length, 0)
+  assert.equal(ctx.music.importBusy.value, true)
+  assert.equal(ctx.music.importFilePercent.value, 95)
+  gate.resolve([{ confident: true, lyrics: [{ time: 1, text: '网络歌词' }], id: 'matched' }])
+  await importing
+  assert.equal(ctx.music.tracks.value[0].lyrics[0].text, '网络歌词')
+  assert.equal(ctx.music.importPercent.value, 100)
+})
+
+test('cancel during lyric lookup removes uncommitted audio and cover', async () => {
+  const gate = deferred(), ctx = await setup({ automatic: true, metadata: async () => ({ artist: '歌手', lyrics: [], coverData: new Uint8Array([1]), coverMime: 'image/png' }), lyrics: () => gate.promise })
+  ctx.select([song('online')]); const importing = ctx.music.importSong()
+  await until(() => ctx.music.importStatus.value.includes('联网匹配同步歌词'))
+  ctx.music.cancelImport(); gate.resolve([])
+  await importing
+  assert.equal(ctx.assets.size, 0)
+  assert.equal(ctx.music.tracks.value.length, 0)
+  assert.equal(ctx.music.failures.value.length, 1)
 })

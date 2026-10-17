@@ -19,15 +19,13 @@
       <scroll-view class="particle-options-panel" scroll-y role="dialog" aria-label="视觉空间设置">
         <view class="particle-options-head"><text>视觉空间</text><button class="particle-toggle" @tap="optionsOpen = false">完成</button></view>
         <!-- #ifdef APP-PLUS -->
-        <button v-if="wallpaperAvailable" class="particle-toggle display-entry" @tap="openSystemWallpaper">设为锁屏粒子壁纸</button>
-        <text v-if="wallpaperAvailable" class="particle-option-label">打开系统预览后选择应用范围。锁屏选项由系统提供，息屏停止绘制。</text>
         <text v-if="wallpaperMessage" class="particle-option-label" role="status">{{ wallpaperMessage }}</text>
         <!-- #endif -->
         <button class="particle-toggle display-entry" @tap="optionsOpen = false; $emit('display')">进入锁屏展示</button>
         <text class="particle-option-label">应用内时钟与粒子展示，不替代系统锁屏。</text>
-        <text v-if="deviceState.thermal >= 3" class="particle-option-label">设备温度较高，已暂停自动流动</text><text v-else-if="deviceState.powerSave || deviceState.thermal >= 2" class="particle-option-label">已根据系统状态降低粒子负载</text>
-        <text class="particle-option-label">画质 · {{ particleCount }} 颗粒子{{ adaptive ? ' · 已自动降级' : '' }}</text>
-        <view class="particle-options-row"><button v-for="item in qualityOptions" :key="item.value" class="particle-toggle" :class="{ selected: quality === item.value }" @tap="quality = item.value; saveOptions()">{{ item.label }}</button></view>
+        <text class="particle-option-label">画质 · {{ selectedQuality.label }} · 上限 {{ selectedQuality.points }} 颗</text>
+        <view class="particle-options-row particle-quality-options"><button v-for="item in qualityOptions" :key="item.value" class="particle-toggle" :class="{ selected: quality === item.value }" @tap="quality = item.value; saveOptions()"><text>{{ item.label }}</text><text class="particle-quality-count">{{ item.points }} 颗</text></button></view>
+        <text class="particle-option-label">各档为粒子数量上限，可按流畅度手动切换。</text>
         <text class="particle-option-label">呼吸强度 · {{ motionIntensity }}%</text>
         <slider :value="motionIntensity" :min="0" :max="100" :step="5" activeColor="#6b9f7c" :block-size="18" aria-label="呼吸强度" @change="motionIntensity = Number($event.detail.value); saveOptions()" />
         <text class="particle-option-label">低频扩张，缓慢回落；建筑保持轮廓，锁屏展示更柔和。</text>
@@ -54,12 +52,11 @@
   </view>
 </template>
 <script>
-import { VISUAL_SETTINGS_KEY, normalizeVisualSettings, normalizeTexts, textRows } from '../utils/visual-settings.js'
-import { readDeviceState } from '../utils/device-state.js'
+import { PARTICLE_QUALITY, VISUAL_SETTINGS_KEY, normalizeVisualSettings, normalizeTexts, textRows } from '../utils/visual-settings.js'
 import { readLocal } from '../utils/asset-store.js'
 import { uid } from '../utils/library-core.js'
 // #ifdef APP-PLUS
-import { openParticleWallpaper, setWallpaperEnvelope, setWallpaperIntensity, setWallpaperText } from '@/uni_modules/wuyu-media-session'
+import { setWallpaperEnvelope, setWallpaperIntensity, setWallpaperText } from '@/uni_modules/wuyu-media-session'
 // #endif
 const OPTIONS_KEY = VISUAL_SETTINGS_KEY
 
@@ -70,12 +67,13 @@ export default {
     cover: { type: String, default: '' }, coverKey: { type: String, default: '' }, audio: { type: String, default: '' }, audioKey: { type: String, default: '' },
     time: { type: Number, default: 0 }, playing: { type: Boolean, default: false }, visible: { type: Boolean, default: true }, size: { type: Number, default: 0 },
   },
-  data() { return { hostId: `particles-${uid()}`, enabled: true, wallpaperAvailable: false, wallpaperMessage: '', motionIntensity: 80, imageReady: false, status: '正在准备流动封面…', shape: '封面', audioSource: '', coverSource: '', preparedCover: '', preparedCoverKey: '', needsAudioKey: '', coverRequest: 0, visualError: false, reducedMotion: false, sourceKey: '', request: 0, assetRevision: 0, action: '', actionId: 0, optionsOpen: false, customTexts: [], textFont: 'sans', textLayout: 'stack', deviceState: {}, textFonts: [{id:'sans',label:'黑体'},{id:'serif',label:'宋体'},{id:'mono',label:'等宽'}], textDraft: '', textError: '', quality: 'balanced', autoChange: true, interval: 12, favoriteOnly: false, favoriteCount: 0, shapeFavorite: false, particleCount: 0, adaptive: false, cacheBytes: 0, cacheError: '', qualityOptions: [{value:'power',label:'省电'},{value:'balanced',label:'均衡'},{value:'fine',label:'精细'}] } },
+  data() { return { hostId: `particles-${uid()}`, enabled: true, wallpaperAvailable: false, wallpaperMessage: '', motionIntensity: 80, imageReady: false, status: '正在准备流动封面…', shape: '封面', audioSource: '', coverSource: '', preparedCover: '', preparedCoverKey: '', needsAudioKey: '', coverRequest: 0, visualError: false, reducedMotion: false, sourceKey: '', request: 0, assetRevision: 0, action: '', actionId: 0, optionsOpen: false, customTexts: [], textFont: 'sans', textLayout: 'stack', textFonts: [{id:'sans',label:'黑体'},{id:'serif',label:'宋体'},{id:'mono',label:'等宽'}], textDraft: '', textError: '', quality: 'fine', qualityVersion: 2, autoChange: true, interval: 12, favoriteOnly: false, favoriteCount: 0, shapeFavorite: false, particleCount: 0, cacheBytes: 0, cacheError: '', qualityOptions: Object.entries(PARTICLE_QUALITY).map(([value, profile]) => ({ value, ...profile })) } },
   computed: {
+    selectedQuality() { return PARTICLE_QUALITY[this.quality] || PARTICLE_QUALITY.fine },
     previewRows() { return textRows(normalizeTexts(this.textDraft)[0] || '雾屿音乐', this.textLayout) },
     previewFont() { return { sans: 'sans-serif', serif: 'serif', mono: 'monospace' }[this.textFont] },
     assetState() { return { id: this.hostId, cover: this.coverSource, coverKey: this.coverSource ? this.preparedCoverKey : '', audio: this.audioSource, audioKey: this.audioKey, revision: this.assetRevision } },
-    motionState() { return { id: this.hostId, time: this.time, playing: this.playing, visible: this.visible, obscured: this.optionsOpen, enabled: this.enabled && !!this.cover, action: this.action, actionId: this.actionId, quality: this.quality, autoChange: this.autoChange, interval: this.interval, favoriteOnly: this.favoriteOnly, customTexts: this.customTexts, textFont: this.textFont, textLayout: this.textLayout, powerSave: !!this.deviceState.powerSave, thermal: this.deviceState.thermal || 0, displayMode: this.displayMode, motionIntensity: this.motionIntensity, wallpaperAvailable: this.wallpaperAvailable } },
+    motionState() { return { id: this.hostId, time: this.time, playing: this.playing, visible: this.visible, obscured: this.optionsOpen, enabled: this.enabled && !!this.cover, action: this.action, actionId: this.actionId, quality: this.quality, autoChange: this.autoChange, interval: this.interval, favoriteOnly: this.favoriteOnly, customTexts: this.customTexts, textFont: this.textFont, textLayout: this.textLayout, displayMode: this.displayMode, motionIntensity: this.motionIntensity, wallpaperAvailable: this.wallpaperAvailable } },
   },
   watch: {
     immersive(value) { if (value) { this.previousEnabled = this.enabled; this.enabled = true; this.optionsOpen = false } else this.enabled = this.previousEnabled !== false },
@@ -86,7 +84,7 @@ export default {
       if (this.wallpaperAvailable) { try { setWallpaperIntensity(value / 100) } catch {} }
       // #endif
     },
-    enabled() { this.prepareAudio(); this.saveOptions() }, visible() { this.pollDevice(); if (!this.visible) this.optionsOpen = false; this.prepareCover(); this.prepareAudio() },
+    enabled() { this.prepareAudio(); this.saveOptions() }, visible() { if (!this.visible) this.optionsOpen = false; this.prepareCover(); this.prepareAudio() },
   },
   mounted() {
     this.loadOptions()
@@ -94,15 +92,14 @@ export default {
     // #ifdef APP-PLUS
     this.wallpaperAvailable = plus.os.name === 'Android'
     // #endif
-    this.syncWallpaperText(); this.pollDevice(); this.deviceTimer = setInterval(this.pollDevice, 15000)
+    this.syncWallpaperText()
     this.prepareCover(); this.prepareAudio()
   },
-  beforeUnmount() { ++this.request; ++this.coverRequest; clearInterval(this.deviceTimer); uni.$off('wuyu-visual-settings', this.loadOptions) },
+  beforeUnmount() { ++this.request; ++this.coverRequest; uni.$off('wuyu-visual-settings', this.loadOptions) },
   methods: {
     loadOptions() {
-      try { Object.assign(this, normalizeVisualSettings(uni.getStorageSync(OPTIONS_KEY))); this.textDraft = this.customTexts.join('\n'); this.syncWallpaperText() } catch {}
+      try { const saved = uni.getStorageSync(OPTIONS_KEY); Object.assign(this, normalizeVisualSettings(saved)); if (saved?.qualityVersion !== 2) this.saveOptions(); this.textDraft = this.customTexts.join('\n'); this.syncWallpaperText() } catch {}
     },
-    pollDevice() { if (this.visible) this.deviceState = readDeviceState() },
     syncWallpaperText() {
       // #ifdef APP-PLUS
       if (this.wallpaperAvailable) {
@@ -120,23 +117,13 @@ export default {
       else this.textError = '文字已保存，导入带封面的歌曲后即可展示'
     },
     clearCustomText() { this.customTexts = []; this.textDraft = ''; this.textError = ''; this.saveOptions() },
-    openOptions() { this.optionsOpen = true; this.command('cache-info'); this.pollDevice() },
+    openOptions() { this.optionsOpen = true; this.command('cache-info') },
     saveOptions() {
       try {
         uni.setStorageSync(OPTIONS_KEY, normalizeVisualSettings(this))
         this.syncWallpaperText()
         uni.$emit('wuyu-visual-settings-saved')
       } catch { this.cacheError = '设置保存失败，本次仍可使用' }
-    },
-    openSystemWallpaper() {
-      // #ifdef APP-PLUS
-      this.wallpaperMessage = ''
-      try {
-        setWallpaperIntensity(this.motionIntensity / 100)
-        this.syncWallpaperText()
-        this.wallpaperMessage = openParticleWallpaper() || '已打开系统预览，请在系统页面确认设置。'
-      } catch { this.wallpaperMessage = '动态壁纸模块未能启动，请使用重新打包的自定义基座或 APK' }
-      // #endif
     },
     command(action) { this.action = action; ++this.actionId },
     onParticleStatus(value) {
@@ -157,7 +144,6 @@ export default {
         if (!value.favoriteCount && this.favoriteOnly) { this.favoriteOnly = false; this.saveOptions() }
       }
       if (Number.isFinite(value.particleCount)) this.particleCount = value.particleCount
-      if (typeof value.adaptive === 'boolean') this.adaptive = value.adaptive
       if (Number.isFinite(value.cacheBytes)) this.cacheBytes = value.cacheBytes
       if (value.cacheError) this.cacheError = value.cacheError
       if (value.needsAudio === this.audioKey) { this.needsAudioKey = value.needsAudio; this.prepareAudio() }
@@ -259,4 +245,5 @@ export default {
 .display-entry{width:100%;margin:12px 0;background:#dfede3;font-size:13px}
 .particle-text-settings{margin:16px 0;padding:14px;border-radius:20px;background:#eaf3ed9c;border:1px solid #fff}.particle-text-label{display:block;margin-bottom:10px;font-size:14px;font-weight:600;color:#44634d}.particle-text-input{box-sizing:border-box;width:100%;height:46px;padding:0 14px;border-radius:14px;border:1px solid #d9e6dd;background:#ffffffc9;color:#355e43;font-size:14px}.particle-text-settings .particle-options-row{margin-bottom:0}
 .particle-tools-foot{display:flex;align-items:center;gap:12px;pointer-events:auto}.particle-settings-link{margin:0;padding:0 10px;min-height:36px;line-height:36px;background:transparent;color:#567461;font-size:11px}.particle-text-input{height:96px;padding:12px 14px;margin-bottom:12px;line-height:1.6}.particle-text-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88px;padding:12px;border-radius:16px;background:#f7fbf8;color:#456b53;font-size:24px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}.particle-text-preview text{max-width:100%}.particle-options-panel .particle-toggle{font-size:12px}.particle-options-panel .particle-toggle:active{background:#c8dfd0;transform:scale(.97)}
+.particle-quality-options .particle-toggle{flex:1;min-width:0;flex-direction:column;gap:4px;min-height:62px;padding:8px 6px;box-sizing:border-box}.particle-quality-count{font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
 </style>

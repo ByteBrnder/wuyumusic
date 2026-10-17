@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "Apache-2.0",
   "scripts": {
-    "test": "node --test tests/library-core.test.mjs tests/lyrics-api.test.mjs tests/lyrics-proxy.test.mjs tests/music-workflows.test.mjs",
+    "test": "node --test tests/library-core.test.mjs tests/lyrics-api.test.mjs tests/lyrics-proxy.test.mjs tests/music-workflows.test.mjs tests/particle-quality.test.mjs",
     "dev:app": "uni -p app",
     "build:app": "uni build -p app",
     "dev:custom": "uni -p",
